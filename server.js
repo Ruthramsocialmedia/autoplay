@@ -213,7 +213,7 @@ app.post("/disable-autopilot", (req, res) => {
 
 // Serve default UI (to submit path)
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "UI.html"));
+  res.sendFile(path.join(__dirname, "index.html"));
 });
 
 app.listen(PORT, () => {
