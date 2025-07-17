@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Autopilot Config</title>
+</head>
+<body>
+
+  <h2>📂 Enter Your Virtual Tour Folder Path</h2>
+
+  <form onsubmit="submitPath(event)">
+    <input
+      type="text"
+      id="pathInput"
+      placeholder="Enter Your Project Folder Path"
+      style="width: 400px; padding: 8px;"
+    />
+    <button type="submit" style="padding: 8px 16px;">Set Path</button>
+  </form>
+
+  <p id="status" style="margin-top: 10px;"></p>
+
+  <script>
+    const API_BASE = "https://autoplay.onrender.com"; // ⬅️ change this to your real Render backend URL
+
+    async function submitPath(e) {
+      e.preventDefault();
+      const path = document.getElementById("pathInput").value.trim();
+      const status = document.getElementById("status");
+
+      if (!path) {
+        status.textContent = "⚠️ Please enter a folder path.";
+        return;
+      }
+
+      status.textContent = "⏳ Sending path to server...";
+
+      try {
+        const res = await fetch(`${API_BASE}/set-path`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          status.textContent = "✅ Folder path accepted. Autopilot buttons injected.";
+        } else {
+          status.textContent = "❌ " + (data.message || "Invalid path.");
+        }
+      } catch (err) {
+        console.error(err);
+        status.textContent = "❌ Failed to communicate with server.";
+      }
+    }
+  </script>
+
+</body>
+</html>
