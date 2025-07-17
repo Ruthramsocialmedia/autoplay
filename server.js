@@ -31,16 +31,6 @@ initialSequence: {
   class: "PanoramaCameraSequence"
 }`;
 
-// 🔄 Set global paths after folder input
-function setPaths(folderPath) {
-  ROOT = folderPath;
-  MAIN = path.join(ROOT, "script_general.js");
-  BACKUP = path.join(ROOT, "backup_script_general.js");
-  MODIFIED = path.join(ROOT, "modified_script_general.js");
-  INDEX = path.join(ROOT, "index.htm");
-  app.use(express.static(ROOT)); // Serve updated static files
-}
-
 // ✨ Prettify JS using Prettier
 async function prettify(code) {
   try {
@@ -51,7 +41,17 @@ async function prettify(code) {
   }
 }
 
-// 🧠 Inject autopilot logic into the script
+// 🔄 Set paths after folder input
+function setPaths(folderPath) {
+  ROOT = folderPath;
+  MAIN = path.join(ROOT, "script_general.js");
+  BACKUP = path.join(ROOT, "backup_script_general.js");
+  MODIFIED = path.join(ROOT, "modified_script_general.js");
+  INDEX = path.join(ROOT, "index.htm");
+  app.use(express.static(ROOT));
+}
+
+// 🧠 Inject autopilot into script
 function injectAutopilot(rawCode) {
   const regex = /(initialSequence\s*:\s*)"this\.sequence_[A-Z0-9_]+?"/g;
   const matches = [...rawCode.matchAll(regex)];
@@ -59,18 +59,43 @@ function injectAutopilot(rawCode) {
   return { modifiedCode, count: matches.length };
 }
 
-// 🧩 Inject UI buttons and script into index.htm
+// 🧹 Remove base64 inline PNGs
+function removeInlinePNGs(directory) {
+  const extensions = [".js", ".html", ".htm", ".json"];
+  const walk = (dir) => {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (extensions.includes(path.extname(entry.name))) {
+        let content = fs.readFileSync(fullPath, "utf-8");
+        const cleaned = content.replace(/data:image\/png;base64,[^'"\s)]+/g, "null");
+        if (cleaned !== content) {
+          fs.writeFileSync(fullPath, cleaned, "utf-8");
+          console.log("🧹 Cleaned:", fullPath);
+        }
+      }
+    }
+  };
+  try {
+    walk(directory);
+    console.log("✅ Base64 PNGs cleaned in:", directory);
+  } catch (err) {
+    console.error("❌ Failed to clean inline PNGs:", err.message);
+  }
+}
+
+// 🧩 Inject UI buttons into index.htm
 function patchIndexFile() {
   const html = fs.readFileSync(INDEX, "utf-8");
   const alreadyHasUI = html.includes("autopilot-controls");
-
   if (alreadyHasUI) {
     console.log("✅ Autopilot controls already present in index.htm");
     return;
   }
 
   const controlsHTML = `
-    <!-- 🔘 Autopilot Control Buttons -->
     <div id="autopilot-controls">
       <button onclick="enableAutopilot()">▶️ Enable Autopilot</button>
       <button onclick="disableAutopilot()">⛔ Disable Autopilot</button>
@@ -84,14 +109,12 @@ function patchIndexFile() {
         devicesUrl.general = "modified_script_general.js?v=" + Date.now();
         window.location.reload();
       }
-
       async function disableAutopilot() {
         await fetch("/disable-autopilot", { method: "POST" });
         localStorage.setItem("autopilotEnabled", "false");
         devicesUrl.general = "script_general.js?v=" + Date.now();
         window.location.reload();
       }
-
       (function init() {
         const mode = localStorage.getItem("autopilotEnabled");
         devicesUrl.general = (mode === "true" ? "modified_script_general.js" : "script_general.js") + "?v=" + Date.now();
@@ -129,9 +152,10 @@ function patchIndexFile() {
   console.log("✅ Autopilot UI injected into index.htm");
 }
 
-// 📦 Create backup, modified files, and patch UI
+// 📦 Create backup, autopilot file, clean PNGs, inject UI
 async function initializeFiles() {
   patchIndexFile();
+  removeInlinePNGs(ROOT);
 
   if (!fs.existsSync(BACKUP)) {
     fs.copyFileSync(MAIN, BACKUP);
@@ -146,17 +170,11 @@ async function initializeFiles() {
   console.log(`✅ Autopilot version created (${count} panoramas updated).`);
 }
 
-// 🎯 Endpoint to set user folder path from frontend
+// 🎯 Receive folder path
 app.post("/set-path", async (req, res) => {
   const folderPath = req.body.path;
-  if (!folderPath) {
-    return res.status(400).json({ success: false, message: "No path provided." });
-  }
-
-  if (!fs.existsSync(folderPath)) {
-    return res.status(400).json({ success: false, message: "Folder not found." });
-  }
-
+  if (!folderPath) return res.status(400).json({ success: false, message: "No path provided." });
+  if (!fs.existsSync(folderPath)) return res.status(400).json({ success: false, message: "Folder not found." });
   if (!fs.existsSync(path.join(folderPath, "script_general.js"))) {
     return res.status(400).json({ success: false, message: "Missing script_general.js" });
   }
@@ -166,7 +184,7 @@ app.post("/set-path", async (req, res) => {
     await initializeFiles();
     res.json({ success: true });
   } catch (err) {
-    console.error("❌ Failed:", err);
+    console.error("❌ Error during set-path:", err);
     res.status(500).json({ success: false, message: "Internal error." });
   }
 });
@@ -175,10 +193,10 @@ app.post("/set-path", async (req, res) => {
 app.post("/enable-autopilot", (req, res) => {
   try {
     fs.copyFileSync(MODIFIED, MAIN);
-    console.log("🔁 Autopilot script applied.");
+    console.log("🔁 Autopilot enabled.");
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: "Failed to enable autopilot." });
+    res.status(500).json({ success: false, message: "Enable failed." });
   }
 });
 
@@ -186,22 +204,18 @@ app.post("/enable-autopilot", (req, res) => {
 app.post("/disable-autopilot", (req, res) => {
   try {
     fs.copyFileSync(BACKUP, MAIN);
-    console.log("🔁 Original script restored.");
+    console.log("🔁 Autopilot disabled.");
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, message: "Failed to disable autopilot." });
+    res.status(500).json({ success: false, message: "Disable failed." });
   }
 });
 
-// Root route
+// Serve default UI (to submit path)
 app.get("/", (req, res) => {
-  if (!INDEX || !fs.existsSync(INDEX)) {
-    return res.send("👋 Please set your folder path using POST /set-path");
-  }
-  res.sendFile(INDEX);
+  res.sendFile(path.join(__dirname, "UI.html"));
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
   console.log("📭 Awaiting user to submit their folder path via UI.");
